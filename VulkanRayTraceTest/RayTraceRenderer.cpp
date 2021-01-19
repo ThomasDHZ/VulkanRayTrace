@@ -137,20 +137,21 @@ void RayTraceRenderer::createTopLevelAccelerationStructure(RayTraceModel& model)
 {
     uint32_t PrimitiveCount = 1;
     std::vector<VkAccelerationStructureInstanceKHR> AccelerationStructureInstanceList = {};
+    for (auto x = 0; x < bottomLevelASList.size(); x++)
+    {
+        glm::mat4 transformMatrix2 = glm::mat4(1.0f);
+        auto transtransformMatrix2 = glm::transpose(transformMatrix2);
+        VkTransformMatrixKHR transformMatrix = GLMToVkTransformMatrix(transtransformMatrix2);
 
-
-    glm::mat4 transformMatrix2 = glm::mat4(1.0f);
-    auto transtransformMatrix2 = glm::transpose(transformMatrix2);
-    VkTransformMatrixKHR transformMatrix = GLMToVkTransformMatrix(transtransformMatrix2);
-
-    VkAccelerationStructureInstanceKHR AccelerationStructureInstance{};
-    AccelerationStructureInstance.transform = transformMatrix;
-    AccelerationStructureInstance.instanceCustomIndex = 0;
-    AccelerationStructureInstance.mask = 0xFF;
-    AccelerationStructureInstance.instanceShaderBindingTableRecordOffset = 0;
-    AccelerationStructureInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-    AccelerationStructureInstance.accelerationStructureReference = bottomLevelASList[0].deviceAddress;
-    AccelerationStructureInstanceList.emplace_back(AccelerationStructureInstance);
+        VkAccelerationStructureInstanceKHR AccelerationStructureInstance{};
+        AccelerationStructureInstance.transform = transformMatrix;
+        AccelerationStructureInstance.instanceCustomIndex = x;
+        AccelerationStructureInstance.mask = 0xFF;
+        AccelerationStructureInstance.instanceShaderBindingTableRecordOffset = 0;
+        AccelerationStructureInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+        AccelerationStructureInstance.accelerationStructureReference = bottomLevelASList[x].deviceAddress;
+        AccelerationStructureInstanceList.emplace_back(AccelerationStructureInstance);
+    }
 
 
     VulkanBuffer instancesBuffer;
