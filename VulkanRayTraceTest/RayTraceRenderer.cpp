@@ -42,18 +42,18 @@ RayTraceRenderer::RayTraceRenderer(VkDevice Device, VkPhysicalDevice PhysicalDev
 
     camera = std::make_shared<PerspectiveCamera>(glm::vec2(WIDTH, HEIGHT), glm::vec3(0.0f, 0.0f, 5.0f));
 
-    model = RayTraceModel(device, physicalDevice, "../Models/viking_room.obj");
+    model = RayTraceModel(device, physicalDevice, "C:/Users/dotha/source/repos/VulkanGraphics/Models/viking_room.obj");
 
-    createTextureImage(DiffuseMap, "../Models/viking_room.png");
+    createTextureImage(DiffuseMap, "C:/Users/dotha/source/repos/VulkanGraphics/Models/viking_room.png");
     createTextureImageView(DiffuseMap);
     createTextureSampler(DiffuseMap);
 
     createBottomLevelAccelerationStructure(model);
-    createTopLevelAccelerationStructure(model);
+    createTopLevelAccelerationStructure();
     createStorageImage();
     createRayTracingPipeline();
     createShaderBindingTable();
-    createDescriptorSets(model);
+    createDescriptorSets();
 
 
 
@@ -133,7 +133,7 @@ void RayTraceRenderer::createBottomLevelAccelerationStructure(RayTraceModel& mod
     deleteScratchBuffer(scratchBuffer);
     bottomLevelASList.emplace_back(bottomLevelAS);
 }
-void RayTraceRenderer::createTopLevelAccelerationStructure(RayTraceModel& model)
+void RayTraceRenderer::createTopLevelAccelerationStructure()
 {
     uint32_t PrimitiveCount = 1;
     std::vector<VkAccelerationStructureInstanceKHR> AccelerationStructureInstanceList = {};
@@ -152,7 +152,6 @@ void RayTraceRenderer::createTopLevelAccelerationStructure(RayTraceModel& model)
         AccelerationStructureInstance.accelerationStructureReference = bottomLevelASList[x].deviceAddress;
         AccelerationStructureInstanceList.emplace_back(AccelerationStructureInstance);
     }
-
 
     VulkanBuffer instancesBuffer;
     instancesBuffer.CreateBuffer(device, physicalDevice, sizeof(VkAccelerationStructureInstanceKHR) * AccelerationStructureInstanceList.size(), VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, AccelerationStructureInstanceList.data());
@@ -179,9 +178,7 @@ void RayTraceRenderer::createTopLevelAccelerationStructure(RayTraceModel& model)
     accelerationStructureBuildSizesInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
     vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &AccelerationStructureBuildGeometryInfo, &PrimitiveCount, &accelerationStructureBuildSizesInfo);
 
-
     createAccelerationStructure(topLevelAS, VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR, accelerationStructureBuildSizesInfo);
-
 
     RayTracingScratchBuffer ScratchBuffer = createScratchBuffer(accelerationStructureBuildSizesInfo.buildScratchSize);
 
@@ -380,14 +377,14 @@ void RayTraceRenderer::createRayTracingPipeline()
     VkDescriptorSetLayoutBinding VertexBufferStructureBinding = {};
     VertexBufferStructureBinding.binding = 3;
     VertexBufferStructureBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    VertexBufferStructureBinding.descriptorCount = 1;
+    VertexBufferStructureBinding.descriptorCount = static_cast<uint32_t>(bottomLevelASList.size());
     VertexBufferStructureBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
     RTDescriptorSetBindings.emplace_back(VertexBufferStructureBinding);
 
     VkDescriptorSetLayoutBinding IndexBufferStructureBinding = {};
     IndexBufferStructureBinding.binding = 4;
     IndexBufferStructureBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    IndexBufferStructureBinding.descriptorCount = 1;
+    IndexBufferStructureBinding.descriptorCount = static_cast<uint32_t>(bottomLevelASList.size());
     IndexBufferStructureBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
     RTDescriptorSetBindings.emplace_back(IndexBufferStructureBinding);
 
@@ -470,13 +467,13 @@ void RayTraceRenderer::createShaderBindingTable() {
     missShaderBindingTable.CreateBuffer(device, physicalDevice, handleSize, VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, shaderHandleStorage.data() + handleSizeAligned);
     hitShaderBindingTable.CreateBuffer(device, physicalDevice, handleSize, VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, shaderHandleStorage.data() + handleSizeAligned * 2);
 }
-void RayTraceRenderer::createDescriptorSets(RayTraceModel& model)
+void RayTraceRenderer::createDescriptorSets()
 {
     std::vector<VkDescriptorPoolSize> poolSizes = {
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
         {VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1},
-      { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 }};
+      { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1 } };
 
     VkDescriptorPoolCreateInfo RayTraceDescriptorPoolInfo = {};
     RayTraceDescriptorPoolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -517,44 +514,51 @@ void RayTraceRenderer::createDescriptorSets(RayTraceModel& model)
     ImageDescriptorSet.pImageInfo = &RayTraceImageDescriptor;
     ImageDescriptorSet.descriptorCount = 1;
 
-    VkDescriptorBufferInfo RTBufferInfo = {};
-    RTBufferInfo.buffer = model.MeshList[0].UniformBuffer.Buffer;
-    RTBufferInfo.offset = 0;
-    RTBufferInfo.range = model.MeshList[0].UniformBuffer.BufferSize;
+    VkDescriptorBufferInfo UniformBuffer = {};
+    UniformBuffer.buffer = model.MeshList[0].UniformBuffer.Buffer;
+    UniformBuffer.offset = 0;
+    UniformBuffer.range = model.MeshList[0].UniformBuffer.BufferSize;
 
     VkWriteDescriptorSet UniformDescriptorSet{};
     UniformDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     UniformDescriptorSet.dstSet = RTDescriptorSet;
     UniformDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     UniformDescriptorSet.dstBinding = 2;
-    UniformDescriptorSet.pBufferInfo = &RTBufferInfo;
+    UniformDescriptorSet.pBufferInfo = &UniformBuffer;
     UniformDescriptorSet.descriptorCount = 1;
 
-    VkDescriptorBufferInfo VertexBufferInfo = {};
-    VertexBufferInfo.buffer = model.MeshList[0].VertexBuffer.Buffer;
-    VertexBufferInfo.offset = 0;
-    VertexBufferInfo.range = model.MeshList[0].VertexBuffer.BufferSize;
+    std::vector<VkDescriptorBufferInfo> VertexBufferInfoList;
+    std::vector<VkDescriptorBufferInfo> IndexBufferInfoList;
+    for (auto blas : bottomLevelASList)
+    {
+        VkDescriptorBufferInfo VertexBufferInfo = {};
+        VertexBufferInfo.buffer = model.MeshList[0].VertexBuffer.Buffer;
+        VertexBufferInfo.offset = 0;
+        VertexBufferInfo.range = model.MeshList[0].VertexBuffer.BufferSize;
+        VertexBufferInfoList.emplace_back(VertexBufferInfo);
+
+        VkDescriptorBufferInfo IndexBufferInfo = {};
+        IndexBufferInfo.buffer = model.MeshList[0].IndexBuffer.Buffer;
+        IndexBufferInfo.offset = 0;
+        IndexBufferInfo.range = model.MeshList[0].IndexBuffer.BufferSize;
+        IndexBufferInfoList.emplace_back(IndexBufferInfo);
+    }
 
     VkWriteDescriptorSet VertexDescriptorSet{};
     VertexDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     VertexDescriptorSet.dstSet = RTDescriptorSet;
     VertexDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     VertexDescriptorSet.dstBinding = 3;
-    VertexDescriptorSet.pBufferInfo = &VertexBufferInfo;
-    VertexDescriptorSet.descriptorCount = 1;
-
-    VkDescriptorBufferInfo IndexBufferInfo = {};
-    IndexBufferInfo.buffer = model.MeshList[0].IndexBuffer.Buffer;
-    IndexBufferInfo.offset = 0;
-    IndexBufferInfo.range = model.MeshList[0].IndexBuffer.BufferSize;
+    VertexDescriptorSet.pBufferInfo = VertexBufferInfoList.data();
+    VertexDescriptorSet.descriptorCount = static_cast<uint32_t>(VertexBufferInfoList.size());
 
     VkWriteDescriptorSet IndexDescriptorSet{};
     IndexDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     IndexDescriptorSet.dstSet = RTDescriptorSet;
     IndexDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     IndexDescriptorSet.dstBinding = 4;
-    IndexDescriptorSet.pBufferInfo = &IndexBufferInfo;
-    IndexDescriptorSet.descriptorCount = 1;
+    IndexDescriptorSet.pBufferInfo = IndexBufferInfoList.data();
+    IndexDescriptorSet.descriptorCount = static_cast<uint32_t>(IndexBufferInfoList.size());
 
     VkDescriptorImageInfo DiffuseMapImage = {};
     DiffuseMapImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -753,7 +757,7 @@ void RayTraceRenderer::createAccelerationStructure(AccelerationStructure& accele
     accelerationStructureCreate_info.size = buildSizeInfo.accelerationStructureSize;
     accelerationStructureCreate_info.type = type;
     vkCreateAccelerationStructureKHR(device, &accelerationStructureCreate_info, nullptr, &accelerationStructure.handle);
-   
+
     VkAccelerationStructureDeviceAddressInfoKHR accelerationDeviceAddressInfo{};
     accelerationDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
     accelerationDeviceAddressInfo.accelerationStructure = accelerationStructure.handle;
